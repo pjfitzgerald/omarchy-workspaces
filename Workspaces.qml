@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
@@ -56,7 +57,11 @@ BarWidget {
   // The special workspace this bar's monitor is showing ("" when none). Hyprland keeps the regular
   // workspace focused while a special one is open, so Hyprland.focusedWorkspace can't tell us;
   // seed from the monitor's IPC object and follow `activespecial` events.
-  readonly property var monitor: screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
+  readonly property var monitor: {
+    var window = root.QsWindow.window
+    var screen = window ? window.screen : null
+    return screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
+  }
   property string shownSpecial: ""
   readonly property bool orchShown: shownSpecial === "special:agent-orch"
 
@@ -74,12 +79,11 @@ BarWidget {
       if (data.slice(comma + 1) === root.monitor.name) root.shownSpecial = data.slice(0, comma)
     }
   }
-  Connections {
-    target: root.monitor
-    function onLastIpcObjectChanged() { root.syncSpecial() }
-  }
-  onMonitorChanged: syncSpecial()
-  Component.onCompleted: { Hyprland.refreshMonitors(); syncSpecial() }
+  // lastIpcObject has no change signal: refresh, then read it once the reply has landed.
+  function seedSpecial() { Hyprland.refreshMonitors(); seedTimer.restart() }
+  Timer { id: seedTimer; interval: 500; onTriggered: root.syncSpecial() }
+  onMonitorChanged: seedSpecial()
+  Component.onCompleted: seedSpecial()
 
   function toggleOrch() {
     if (!root.bar) return
