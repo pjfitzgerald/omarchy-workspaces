@@ -51,7 +51,40 @@ BarWidget {
 
   readonly property var scratchpad: workspaceByName("special:scratchpad")
   readonly property int scratchpadCount: scratchpad !== null ? scratchpad.toplevels.values.length : 0
-  readonly property bool scratchpadVisible: scratchpadCount > 0
+  readonly property bool scratchpadVisible: scratchpadCount > 0 || shownSpecial === "special:scratchpad"
+
+  // The special workspace this bar's monitor is showing ("" when none). Hyprland keeps the regular
+  // workspace focused while a special one is open, so Hyprland.focusedWorkspace can't tell us;
+  // seed from the monitor's IPC object and follow `activespecial` events.
+  readonly property var monitor: screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
+  property string shownSpecial: ""
+  readonly property bool orchShown: shownSpecial === "special:agent-orch"
+
+  function syncSpecial() {
+    var ipc = root.monitor ? root.monitor.lastIpcObject : null
+    root.shownSpecial = ipc && ipc.specialWorkspace && ipc.specialWorkspace.name ? String(ipc.specialWorkspace.name) : ""
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (event.name !== "activespecial" || !root.monitor) return
+      var data = String(event.data)
+      var comma = data.lastIndexOf(",")
+      if (data.slice(comma + 1) === root.monitor.name) root.shownSpecial = data.slice(0, comma)
+    }
+  }
+  Connections {
+    target: root.monitor
+    function onLastIpcObjectChanged() { root.syncSpecial() }
+  }
+  onMonitorChanged: syncSpecial()
+  Component.onCompleted: { Hyprland.refreshMonitors(); syncSpecial() }
+
+  function toggleOrch() {
+    if (!root.bar) return
+    root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.workspace.toggle_special(\"agent-orch\")"))
+  }
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
 
@@ -62,7 +95,7 @@ BarWidget {
     id: grid
     anchors.fill: parent
     anchors.rightMargin: root.trailingGap
-    columns: root.vertical ? 1 : root.workspaceIds().length + (root.scratchpadVisible ? 1 : 0)
+    columns: root.vertical ? 1 : root.workspaceIds().length + (root.scratchpadVisible ? 1 : 0) + (root.orchShown ? 1 : 0)
     columnSpacing: root.vertical ? 0 : Style.space(1)
     rowSpacing: root.vertical ? Style.space(2) : 0
 
@@ -74,11 +107,13 @@ BarWidget {
 
         readonly property var workspace: root.workspaceById(modelData)
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
-        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
+        readonly property bool current: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
+        // Under an open special workspace the regular one isn't what you're looking at.
+        readonly property bool focused: current && root.shownSpecial === ""
 
         bar: root.bar
         text: focused ? "󱓻" : (modelData === 10 ? "0" : String(modelData))
-        opacity: occupied || focused ? 1 : 0.5
+        opacity: occupied || current ? 1 : 0.5
         horizontalMargin: 6
         verticalPadding: 6
         fixedWidth: root.vertical ? root.barSize : Style.space(20)
@@ -91,12 +126,26 @@ BarWidget {
       visible: root.scratchpadVisible
       bar: root.bar
       text: root.scratchpadCount > 1 ? " " + root.scratchpadCount : ""
-      opacity: 0.8
+      active: root.shownSpecial === "special:scratchpad"
+      opacity: active ? 1 : 0.8
       horizontalMargin: 6
       verticalPadding: 6
       fixedWidth: root.vertical ? root.barSize : Style.space(root.scratchpadCount > 1 ? 28 : 20)
       fixedHeight: root.barSize
       onPressed: function() { root.toggleScratchpad() }
+    }
+
+    // The orchestrator popout (special:agent-orch), shown only while it's open.
+    WidgetButton {
+      visible: root.orchShown
+      bar: root.bar
+      text: ""  // nf-fa-sitemap, same glyph as the pjf.agent-orch bar icon
+      active: true
+      horizontalMargin: 6
+      verticalPadding: 6
+      fixedWidth: root.vertical ? root.barSize : Style.space(20)
+      fixedHeight: root.barSize
+      onPressed: function() { root.toggleOrch() }
     }
   }
 }
