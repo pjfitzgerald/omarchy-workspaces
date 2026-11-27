@@ -63,7 +63,10 @@ BarWidget {
     return screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
   }
   property string shownSpecial: ""
+  // The orchestrator popout: icon while its terminal sits on special:agent-orch, highlighted while open.
+  readonly property var orch: workspaceByName("special:agent-orch")
   readonly property bool orchShown: shownSpecial === "special:agent-orch"
+  readonly property bool orchVisible: (orch !== null && orch.toplevels.values.length > 0) || orchShown
 
   function syncSpecial() {
     var ipc = root.monitor ? root.monitor.lastIpcObject : null
@@ -99,7 +102,7 @@ BarWidget {
     id: grid
     anchors.fill: parent
     anchors.rightMargin: root.trailingGap
-    columns: root.vertical ? 1 : root.workspaceIds().length + (root.scratchpadVisible ? 1 : 0) + (root.orchShown ? 1 : 0)
+    columns: root.vertical ? 1 : root.workspaceIds().length + (root.scratchpadVisible ? 1 : 0) + (root.orchVisible ? 1 : 0)
     columnSpacing: root.vertical ? 0 : Style.space(1)
     rowSpacing: root.vertical ? Style.space(2) : 0
 
@@ -139,12 +142,13 @@ BarWidget {
       onPressed: function() { root.toggleScratchpad() }
     }
 
-    // The orchestrator popout (special:agent-orch), shown only while it's open.
+    // The orchestrator popout (special:agent-orch), styled like the scratchpad icon.
     WidgetButton {
-      visible: root.orchShown
+      visible: root.orchVisible
       bar: root.bar
       text: ""  // nf-fa-sitemap, same glyph as the pjf.agent-orch bar icon
-      active: true
+      active: root.orchShown
+      opacity: active ? 1 : 0.8
       horizontalMargin: 6
       verticalPadding: 6
       fixedWidth: root.vertical ? root.barSize : Style.space(20)
